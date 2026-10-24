@@ -1,0 +1,2 @@
+# Only needed to run from source or to build the app (the built app downloads newer versions itself).
+yt-dlp>=2024.8.6

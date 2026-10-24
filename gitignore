@@ -1,0 +1,13 @@
+# downloaded at runtime - never commit
+bin/
+yt-dlp.pyz
+yt-dlp.pyz.new
+yt-dlp.pyz.dl
+libs/
+
+# python / build output
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
