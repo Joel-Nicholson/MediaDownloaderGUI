@@ -14,7 +14,7 @@ Double-click `MediaDownloader` (`.exe` on Windows). That's it — no Python, yt-
   - macOS `~/Library/Application Support/MediaDownloader`
   - Linux `~/.local/share/MediaDownloader`
 
-## For you looking at this repo that wants to build the packaged app, run in same folder (Under this are instructions to run straight from a script if you dont want to do this)
+## This is for you looking at this repo that wants to build the packaged app (OPTIONAL), run the lines below in same folder (The next heading are instructions to run straight from a script if you dont want to do this)
 ```
 pip install -r requirements.txt pyinstaller
 python build.py                  # ~30 MB app; fetches ffmpeg on first launch
