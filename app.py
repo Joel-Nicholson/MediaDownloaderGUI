@@ -18,7 +18,8 @@ if sys.stderr is None:
 
 import updater  # noqa: E402
 from downloader import (  # noqa: E402
-    DownloadWorker, Options, fetch_info, find_ffmpeg, ytdlp_version,
+    ClipError, DownloadWorker, Options, fetch_info, find_ffmpeg, validate_clip,
+    ytdlp_version,
 )
 
 QUALITIES = {
@@ -54,6 +55,9 @@ class App(ttk.Frame):
         self.meta = tk.BooleanVar(value=True)
         self.subs = tk.BooleanVar(value=False)
         self.sub_langs = tk.StringVar(value="en")
+        self.clip_start = tk.StringVar(value="")
+        self.clip_end = tk.StringVar(value="")
+        self.accurate = tk.BooleanVar(value=True)
         self.ffmpeg_path = tk.StringVar(value="")
         self.status = tk.StringVar(value="Ready.")
         self.info_text = tk.StringVar(value="")
@@ -128,7 +132,8 @@ class App(ttk.Frame):
         # --- extras
         extras = ttk.LabelFrame(self, text="Options", padding=8)
         extras.grid(row=r, column=0, columnspan=4, sticky="ew", pady=4)
-        ttk.Checkbutton(extras, text="Download whole playlist", variable=self.playlist).grid(row=0, column=0, sticky="w")
+        ttk.Checkbutton(extras, text="Download whole playlist", variable=self.playlist,
+                        command=self._on_playlist_toggle).grid(row=0, column=0, sticky="w")
         ttk.Checkbutton(extras, text="Embed metadata", variable=self.meta).grid(row=0, column=1, sticky="w", padx=16)
         ttk.Checkbutton(extras, text="Embed thumbnail", variable=self.thumb).grid(row=0, column=2, sticky="w")
         ttk.Checkbutton(extras, text="Subtitles", variable=self.subs).grid(row=1, column=0, sticky="w", pady=(6, 0))
@@ -136,6 +141,20 @@ class App(ttk.Frame):
         sub_row.grid(row=1, column=1, columnspan=2, sticky="w", padx=16, pady=(6, 0))
         ttk.Label(sub_row, text="Languages").grid(row=0, column=0)
         ttk.Entry(sub_row, textvariable=self.sub_langs, width=14).grid(row=0, column=1, padx=6)
+
+        ttk.Label(extras, text="Clip (optional)").grid(row=2, column=0, sticky="w", pady=(8, 0))
+        clip_row = ttk.Frame(extras)
+        clip_row.grid(row=2, column=1, columnspan=3, sticky="w", padx=16, pady=(8, 0))
+        ttk.Label(clip_row, text="Start").grid(row=0, column=0)
+        self.clip_start_entry = ttk.Entry(clip_row, textvariable=self.clip_start, width=9)
+        self.clip_start_entry.grid(row=0, column=1, padx=(6, 12))
+        ttk.Label(clip_row, text="End").grid(row=0, column=2)
+        self.clip_end_entry = ttk.Entry(clip_row, textvariable=self.clip_end, width=9)
+        self.clip_end_entry.grid(row=0, column=3, padx=(6, 12))
+        self.accurate_cb = ttk.Checkbutton(clip_row, text="Frame-accurate (slower, keeps audio in sync)", variable=self.accurate)
+        self.accurate_cb.grid(row=0, column=4)
+        ttk.Label(extras, text="Times like 90, 1:30 or 1:02:30. Leave both blank for the whole video.",
+                  foreground="#666").grid(row=3, column=1, columnspan=3, sticky="w", padx=16)
         r += 1
 
         # --- ffmpeg
@@ -183,6 +202,7 @@ class App(ttk.Frame):
     # ---- helpers ---------------------------------------------------------
 
     def _on_mode_change(self):
+        self._update_clip_controls()
         if self.mode.get() == "video":
             self.audio_opts.grid_remove()
             self.video_opts.grid()
@@ -201,6 +221,19 @@ class App(ttk.Frame):
                 text="ffmpeg not found — merging/conversion will fail. Install it or locate it.",
                 foreground="#c62828",
             )
+
+    def _on_playlist_toggle(self):
+        self._update_clip_controls()
+
+    def _update_clip_controls(self):
+        # One start/end for every video in a playlist makes no sense, so turn clipping off.
+        playlist = self.playlist.get()
+        state = "disabled" if playlist else "normal"
+        for w in (self.clip_start_entry, self.clip_end_entry):
+            w.configure(state=state)
+        # Frame-accurate cutting only applies to video (audio clips are already precise).
+        self.accurate_cb.configure(
+            state="disabled" if playlist or self.mode.get() == "audio" else "normal")
 
     def _refresh_version(self, note: str = ""):
         self.version_label.configure(text=f"yt-dlp {ytdlp_version()}{note}")
@@ -311,6 +344,14 @@ class App(ttk.Frame):
             messagebox.showerror("Bad folder", str(e))
             return
 
+        clip_on = not self.playlist.get()
+        if clip_on:
+            try:
+                validate_clip(self.clip_start.get(), self.clip_end.get())
+            except ClipError as e:
+                messagebox.showwarning("Clip times", str(e))
+                return
+
         opts = Options(
             url=url,
             out_dir=out,
@@ -325,6 +366,9 @@ class App(ttk.Frame):
             subtitles=self.subs.get(),
             sub_langs=self.sub_langs.get(),
             ffmpeg_path=self.ffmpeg_path.get(),
+            clip_start=self.clip_start.get().strip() if clip_on else "",
+            clip_end=self.clip_end.get().strip() if clip_on else "",
+            accurate_cut=self.accurate.get(),
         )
         self.progress.configure(value=0)
         self.status.set("Starting…")
@@ -367,6 +411,8 @@ class App(ttk.Frame):
                         self.progress.configure(value=100)
                     self._append_log(msg)
                     self._set_running(False)
+                    if msg.startswith("Clip times:"):
+                        messagebox.showwarning("Clip times", msg[len("Clip times:"):].strip())
         except queue.Empty:
             pass
         self.after(100, self._poll_events)
