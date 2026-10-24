@@ -22,6 +22,12 @@ cmd = [
     "--name", "MediaDownloader",
     "--collect-submodules", "yt_dlp",      # baseline yt-dlp inside the app (updates override it)
 ]
+try:
+    import yt_dlp_ejs  # noqa: F401  (YouTube's JavaScript solver scripts)
+    cmd += ["--collect-all", "yt_dlp_ejs"]
+except ImportError:
+    print("Note: yt-dlp-ejs isn't installed, so the app will rely on the Update button for it.\n"
+          "      Run `pip install -r requirements.txt` first to bundle it.")
 if "--bundle-ffmpeg" in sys.argv:
     exe = "ffmpeg.exe" if sys.platform.startswith("win") else "ffmpeg"
     if not (root / "bin" / exe).exists():

@@ -7,8 +7,8 @@ metadata and thumbnails, optional start/end clipping, live progress and cancel.
 ## For end users (you already have the packaged app(.exe))
 Double-click `MediaDownloader` (`.exe` on Windows). That's it — no Python, yt-dlp, or ffmpeg to install.
 
-- **First launch:** the app downloads ffmpeg automatically (one time, needs internet).
-- **Updating:** if downloads stop working (sites change often), click **Update yt-dlp & ffmpeg**,
+- **First launch:** the app downloads ffmpeg and Deno (a small JavaScript runtime YouTube needs) automatically (one time, needs internet).
+- **Updating:** if downloads stop working (sites change often), click **Update yt-dlp & ffmpeg** (it also refreshes Deno),
   then restart the app. Updates are stored in your user folder, so the app file itself never changes:
   - Windows `%APPDATA%\MediaDownloader`
   - macOS `~/Library/Application Support/MediaDownloader`
@@ -40,6 +40,12 @@ reports it (YouTube and most big sites do) and tells you if a time is past the e
 - Cover art ("Embed thumbnail") works for MP4, MKV, MP3 and M4A. For WebM, WAV, and FLAC/Opus it is skipped
   with a note in the log (those formats need extra software).
 
+## YouTube says "Sign in to confirm you're not a bot"
+YouTube sometimes blocks anonymous downloads. Under **Cookies** pick the browser you're signed in to YouTube with
+(Firefox is the most reliable; Chrome-based browsers on Windows often can't be read), or choose **Use cookies.txt…**
+to point at an exported cookies file. Your choice is remembered. Turning off a VPN can also help.
+Note: heavy automated use of a logged-in account can get that account flagged by YouTube, so a spare account is safer.
+
 ## Running from source
 Install Python 3.10+ if you don't have it already from python.org (Windows: tick "Add Python to PATH"; Debian/Ubuntu also `sudo apt install python3-tk`), then:
 ```
@@ -51,7 +57,7 @@ the **Update yt-dlp & ffmpeg** button keeps them current. (`python update.py` do
 ## Files
 - `app.py` – tkinter GUI
 - `downloader.py` – download engine (yt-dlp options, progress, cancel, ffmpeg lookup)
-- `updater.py` – downloads/updates yt-dlp and ffmpeg, no pip required
+- `updater.py` – downloads/updates yt-dlp, ffmpeg and Deno, no pip required
 - `build.py` – packages the app with PyInstaller
 - `update.py`, `fetch_binaries.py` – command-line versions of the update step
 

@@ -60,6 +60,8 @@ class Options:
     subtitles: bool = False
     sub_langs: str = "en"
     ffmpeg_path: str = ""          # optional: folder or binary path
+    cookies_browser: str = ""      # "" or firefox/chrome/edge/brave/opera/vivaldi: use that browser's login
+    cookies_file: str = ""         # optional cookies.txt (wins over cookies_browser)
     clip_start: str = ""           # optional "90", "1:30", "1:02:30" (blank = from the beginning)
     clip_end: str = ""             # optional (blank = to the end)
     accurate_cut: bool = True      # re-encode at the cut points: slower, but keeps audio/video in sync
@@ -121,10 +123,10 @@ def validate_clip(start_text: str, end_text: str, duration: Optional[float] = No
     return start, end
 
 
-def probe_duration(url: str) -> Optional[float]:
+def probe_duration(url: str, cookies_browser: str = "", cookies_file: str = "") -> Optional[float]:
     """Length of the video in seconds, or None if the site doesn't say."""
     with YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True,
-                    "noplaylist": True}) as ydl:
+                    "noplaylist": True, **common_ydl_opts(cookies_browser, cookies_file)}) as ydl:
         info = ydl.extract_info(url, download=False)
     d = (info or {}).get("duration")
     return float(d) if d else None
@@ -307,6 +309,53 @@ def find_ffmpeg(custom: str = "") -> Optional[str]:
     return shutil.which("ffmpeg")
 
 
+COOKIE_BROWSERS = ("firefox", "chrome", "edge", "brave", "opera", "vivaldi")
+
+
+def find_deno() -> Optional[str]:
+    """Path to the Deno JavaScript runtime (needed by YouTube), or None."""
+    exe = "deno.exe" if sys.platform.startswith("win") else "deno"
+    p = updater.bin_dir() / exe
+    if p.is_file():
+        return str(p)
+    return shutil.which("deno")
+
+
+def common_ydl_opts(cookies_browser: str = "", cookies_file: str = "") -> dict:
+    """Settings every yt-dlp call needs: JavaScript runtime and (optional) login cookies."""
+    opts: dict = {"color": {"stdout": "never", "stderr": "never"}}   # no ANSI codes in our log box
+    deno = find_deno()
+    if deno:
+        opts["js_runtimes"] = {"deno": {"path": deno}}
+    cookies_file = (cookies_file or "").strip()
+    cookies_browser = (cookies_browser or "").strip().lower()
+    if cookies_file:
+        if not os.path.isfile(cookies_file):
+            raise ValueError(f"Cookies file not found: {cookies_file}")
+        opts["cookiefile"] = cookies_file
+    elif cookies_browser:
+        if cookies_browser not in COOKIE_BROWSERS:
+            raise ValueError(f"Unsupported browser for cookies: {cookies_browser}")
+        opts["cookiesfrombrowser"] = (cookies_browser,)
+    return opts
+
+
+def friendly_error(message: str) -> str:
+    """Add a plain-English hint to the errors people actually run into."""
+    low = message.lower()
+    hint = ""
+    if "sign in to confirm" in low or "not a bot" in low:
+        hint = ("YouTube is asking for a login. Pick your browser under \"Cookies\" "
+                "(Firefox is the most reliable), make sure you're signed in to YouTube there, and try again. "
+                "Turning off a VPN can also help.")
+    elif "dpapi" in low or "could not copy" in low and "cookie" in low or "failed to decrypt" in low:
+        hint = ("Couldn't read that browser's cookies (Chrome-based browsers often block this on Windows). "
+                "Try Firefox, close the browser first, or export a cookies.txt file and choose it instead.")
+    elif "could not find" in low and "cookies" in low:
+        hint = "That browser's cookies weren't found. Check the browser is installed and you've used it to sign in."
+    return f"{message}\n\nTip: {hint}" if hint else message
+
+
 def _put_ffmpeg_on_path(location: str) -> None:
     """Make ffmpeg visible on PATH for this process.
 
@@ -381,8 +430,8 @@ def build_ydl_opts(o: Options, hook, logger) -> dict:
         "retries": 5,
         "restrictfilenames": False,
         "windowsfilenames": True,
-        "color": {"stdout": "never", "stderr": "never"},   # no ANSI codes in our log box
     }
+    opts.update(common_ydl_opts(o.cookies_browser, o.cookies_file))
 
     ffmpeg = prepare_ffmpeg(o.ffmpeg_path)
     if ffmpeg:
@@ -566,7 +615,7 @@ class DownloadWorker:
         if o.playlist or not (o.clip_start.strip() or o.clip_end.strip()):
             return
         self._emit("log", "Checking video length for the clip…")
-        duration = probe_duration(o.url)
+        duration = probe_duration(o.url, o.cookies_browser, o.cookies_file)
         if duration is None:
             self._emit("log", "Note: this site doesn't report a length, so clip times can't be checked.")
         validate_clip(o.clip_start, o.clip_end, duration)
@@ -589,15 +638,17 @@ class DownloadWorker:
             if self._cancel.is_set():
                 self._emit("done", (False, "Cancelled."))
             else:
-                self._emit("done", (False, f"Failed: {e}"))
+                self._emit("done", (False, friendly_error(f"Failed: {e}")))
 
 
-def fetch_info(url: str, playlist: bool = False) -> dict:
+def fetch_info(url: str, playlist: bool = False, cookies_browser: str = "",
+               cookies_file: str = "") -> dict:
     """Quick metadata lookup (no download)."""
     with YoutubeDL({
         "quiet": True,
         "skip_download": True,
         "noplaylist": not playlist,
         "extract_flat": "in_playlist",
+        **common_ydl_opts(cookies_browser, cookies_file),
     }) as ydl:
         return ydl.extract_info(url, download=False)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import queue
 import subprocess
@@ -18,8 +19,8 @@ if sys.stderr is None:
 
 import updater  # noqa: E402
 from downloader import (  # noqa: E402
-    ClipError, DownloadWorker, Options, fetch_info, find_ffmpeg, validate_clip,
-    ytdlp_version,
+    ClipError, DownloadWorker, Options, fetch_info, find_deno, find_ffmpeg,
+    friendly_error, validate_clip, ytdlp_version,
 )
 
 QUALITIES = {
@@ -31,6 +32,7 @@ QUALITIES = {
     "480p": 480,
     "360p": 360,
 }
+COOKIE_CHOICES = ["None", "Firefox", "Chrome", "Edge", "Brave", "Opera", "Vivaldi"]
 CONTAINERS = ["mp4", "mkv", "webm"]
 AUDIO_CODECS = ["mp3", "m4a", "opus", "flac", "wav"]
 AUDIO_BITRATES = ["128", "192", "256", "320"]
@@ -58,6 +60,12 @@ class App(ttk.Frame):
         self.clip_start = tk.StringVar(value="")
         self.clip_end = tk.StringVar(value="")
         self.accurate = tk.BooleanVar(value=True)
+        saved = self._load_settings()
+        browser = saved.get("cookie_browser", "None")
+        self.cookie_browser = tk.StringVar(value=browser if browser in COOKIE_CHOICES else "None")
+        self.cookie_file = tk.StringVar(value=saved.get("cookie_file", ""))
+        self.cookie_browser.trace_add("write", lambda *_: self._save_settings())
+        self.cookie_file.trace_add("write", lambda *_: self._save_settings())
         self.ffmpeg_path = tk.StringVar(value="")
         self.status = tk.StringVar(value="Ready.")
         self.info_text = tk.StringVar(value="")
@@ -67,9 +75,10 @@ class App(ttk.Frame):
         self._check_ffmpeg()
         self._refresh_version()
         self.after(100, self._poll_events)
-        if not find_ffmpeg():
-            # First run: fetch ffmpeg automatically so the user never has to.
-            self.after(400, lambda: self._run_update(ytdlp=False, ffmpeg=True))
+        need_ffmpeg, need_deno = not find_ffmpeg(), not find_deno()
+        if need_ffmpeg or need_deno:
+            # First run: fetch what's missing automatically so the user never has to.
+            self.after(400, lambda: self._run_update(ytdlp=False, ffmpeg=need_ffmpeg, deno=need_deno))
 
     # ---- layout ----------------------------------------------------------
 
@@ -155,6 +164,24 @@ class App(ttk.Frame):
         self.accurate_cb.grid(row=0, column=4)
         ttk.Label(extras, text="Times like 90, 1:30 or 1:02:30. Leave both blank for the whole video.",
                   foreground="#666").grid(row=3, column=1, columnspan=3, sticky="w", padx=16)
+
+        ttk.Label(extras, text="Cookies").grid(row=4, column=0, sticky="w", pady=(8, 0))
+        cookie_row = ttk.Frame(extras)
+        cookie_row.grid(row=4, column=1, columnspan=3, sticky="w", padx=16, pady=(8, 0))
+        ttk.Combobox(cookie_row, textvariable=self.cookie_browser, values=COOKIE_CHOICES,
+                     state="readonly", width=10).grid(row=0, column=0)
+        ttk.Button(cookie_row, text="Use cookies.txt…", command=self._pick_cookie_file).grid(row=0, column=1, padx=8)
+        ttk.Button(cookie_row, text="Clear", width=6, command=lambda: self.cookie_file.set("")).grid(row=0, column=2)
+        self.cookie_label = ttk.Label(cookie_row, text="", foreground="#666")
+        self.cookie_label.grid(row=0, column=3, padx=8)
+        ttk.Label(extras, text="Only needed if YouTube says \u201cSign in to confirm you\u2019re not a bot\u201d. "
+                               "Pick the browser you\u2019re signed in to YouTube with (Firefox is the most reliable); "
+                               "use cookies.txt only if that doesn\u2019t work.",
+                  foreground="#666", wraplength=560, justify="left").grid(row=5, column=1, columnspan=3, sticky="w", padx=16)
+        ttk.Label(extras, text="\u26a0 Warning: this uses your real YouTube login. Heavy or automated downloading can get "
+                               "that account flagged or restricted by YouTube, so a spare account is safer.",
+                  foreground="#b26a00", wraplength=560, justify="left").grid(row=6, column=1, columnspan=3, sticky="w", padx=16, pady=(4, 0))
+        self._update_cookie_label()
         r += 1
 
         # --- ffmpeg
@@ -235,10 +262,47 @@ class App(ttk.Frame):
         self.accurate_cb.configure(
             state="disabled" if playlist or self.mode.get() == "audio" else "normal")
 
-    def _refresh_version(self, note: str = ""):
-        self.version_label.configure(text=f"yt-dlp {ytdlp_version()}{note}")
+    # ---- saved settings (cookie choice) ------------------------------------
 
-    def _run_update(self, ytdlp: bool = True, ffmpeg: bool = True):
+    @staticmethod
+    def _settings_path():
+        return updater.data_dir() / "settings.json"
+
+    def _load_settings(self) -> dict:
+        try:
+            return json.loads(self._settings_path().read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 - missing/corrupt file just means defaults
+            return {}
+
+    def _save_settings(self):
+        try:
+            self._settings_path().write_text(json.dumps({
+                "cookie_browser": self.cookie_browser.get(),
+                "cookie_file": self.cookie_file.get(),
+            }), encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+        self._update_cookie_label()
+
+    def _update_cookie_label(self):
+        f = self.cookie_file.get().strip()
+        self.cookie_label.configure(text=f"using {os.path.basename(f)}" if f else "")
+
+    def _pick_cookie_file(self):
+        path = filedialog.askopenfilename(title="Select a cookies.txt file",
+                                          filetypes=[("Cookies", "*.txt"), ("All files", "*.*")])
+        if path:
+            self.cookie_file.set(path)
+
+    def _cookie_args(self):
+        browser = self.cookie_browser.get()
+        return ("" if browser == "None" else browser.lower()), self.cookie_file.get().strip()
+
+    def _refresh_version(self, note: str = ""):
+        deno = "ready" if find_deno() else "not installed"
+        self.version_label.configure(text=f"yt-dlp {ytdlp_version()}  \u2022  JS runtime (Deno): {deno}{note}")
+
+    def _run_update(self, ytdlp: bool = True, ffmpeg: bool = True, deno: bool = True):
         if self.worker and self.worker.running:
             messagebox.showinfo("Busy", "Wait for the current download to finish first.")
             return
@@ -256,6 +320,11 @@ class App(ttk.Frame):
                     msgs.append(updater.update_ytdlp(emit))
                 if ffmpeg:
                     msgs.append(updater.update_ffmpeg(emit))
+                if deno:
+                    try:
+                        msgs.append(updater.update_deno(emit))
+                    except Exception as e:  # noqa: BLE001 - optional; don't fail the whole update
+                        msgs.append(f"Couldn't install Deno ({e}). Some YouTube videos may need a login or miss formats.")
                 self.events.put(("update_done", (True, " ".join(msgs), ytdlp)))
             except Exception as e:  # noqa: BLE001
                 self.events.put(("update_done", (False, f"Update failed: {e}", False)))
@@ -317,7 +386,8 @@ class App(ttk.Frame):
 
         def work():
             try:
-                info = fetch_info(url, self.playlist.get())
+                browser, cfile = self._cookie_args()
+                info = fetch_info(url, self.playlist.get(), browser, cfile)
                 title = info.get("title", "?")
                 if info.get("_type") == "playlist":
                     n = len(info.get("entries") or [])
@@ -327,7 +397,7 @@ class App(ttk.Frame):
                     d = f" — {int(dur // 60)}:{int(dur % 60):02d}" if dur else ""
                     msg = f"{title}{d}"
             except Exception as e:  # noqa: BLE001
-                msg = f"Couldn't fetch info: {str(e)[:120]}"
+                msg = "Couldn't fetch info: " + friendly_error(str(e)).replace("\n\n", " ")[:300]
             self.events.put(("info", msg))
 
         threading.Thread(target=work, daemon=True).start()
@@ -352,6 +422,11 @@ class App(ttk.Frame):
                 messagebox.showwarning("Clip times", str(e))
                 return
 
+        browser, cfile = self._cookie_args()
+        if cfile and not os.path.isfile(cfile):
+            messagebox.showwarning("Cookies file", f"Can't find the cookies file:\n{cfile}")
+            return
+
         opts = Options(
             url=url,
             out_dir=out,
@@ -366,6 +441,8 @@ class App(ttk.Frame):
             subtitles=self.subs.get(),
             sub_langs=self.sub_langs.get(),
             ffmpeg_path=self.ffmpeg_path.get(),
+            cookies_browser=browser,
+            cookies_file=cfile,
             clip_start=self.clip_start.get().strip() if clip_on else "",
             clip_end=self.clip_end.get().strip() if clip_on else "",
             accurate_cut=self.accurate.get(),
@@ -400,17 +477,19 @@ class App(ttk.Frame):
                     self._append_log(msg)
                     self._set_updating(False)
                     self._check_ffmpeg()
+                    self._refresh_version("  (new yt-dlp active after restart)" if ok and restart else "")
                     if ok:
                         self.progress.configure(value=100)
-                        if restart:
-                            self._refresh_version("  (new version active after restart)")
                 elif kind == "done":
                     ok, msg = payload
-                    self.status.set(msg)
+                    head, _, tip = msg.partition("\n\nTip: ")
+                    self.status.set(head.replace("\n", " ")[:300])
                     if ok:
                         self.progress.configure(value=100)
                     self._append_log(msg)
                     self._set_running(False)
+                    if tip and not ok:
+                        messagebox.showwarning("Heads up", tip)
                     if msg.startswith("Clip times:"):
                         messagebox.showwarning("Clip times", msg[len("Clip times:"):].strip())
         except queue.Empty:
@@ -423,12 +502,15 @@ def main():
         import yt_dlp
         print("yt-dlp", ytdlp_version(), "from", yt_dlp.__file__)
         print("ffmpeg", find_ffmpeg())
+        print("deno", find_deno())
+        import yt_dlp.dependencies as _dep
+        print("ejs solver", _dep.yt_dlp_ejs is not None)
         print("data dir", updater.data_dir())
         return
     root = tk.Tk()
     root.title("MediaDownloader")
-    root.geometry("760x640")
-    root.minsize(640, 560)
+    root.geometry("860x800")
+    root.minsize(760, 680)
     try:
         ttk.Style().theme_use("clam" if sys.platform.startswith("linux") else ttk.Style().theme_use())
     except tk.TclError:

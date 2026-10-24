@@ -5,6 +5,7 @@ Where things live (the "data dir"):
   * running from source: the project folder itself
 
   <data dir>/bin/ffmpeg(.exe), ffprobe(.exe)   latest ffmpeg
+  <data dir>/bin/deno(.exe)                    JavaScript runtime YouTube needs
   <data dir>/yt-dlp.pyz                        latest yt-dlp (official single-file release)
 
 IMPORTANT: this module must not import yt_dlp at module level.
@@ -86,7 +87,8 @@ def activate_ytdlp_override() -> Optional[Path]:
     class _Finder:
         @staticmethod
         def find_spec(name, path=None, target=None):
-            if name == "yt_dlp" or name.startswith("yt_dlp."):
+            # yt_dlp_ejs holds YouTube's JavaScript solver scripts and ships inside the zip too
+            if name in ("yt_dlp", "yt_dlp_ejs") or name.startswith(("yt_dlp.", "yt_dlp_ejs.")):
                 return importer.find_spec(name)
             return None
 
@@ -124,6 +126,36 @@ def update_ytdlp(progress: Progress = None) -> str:
         raise RuntimeError("Downloaded yt-dlp file was not valid.")
     os.replace(tmp, d / "yt-dlp.pyz.new")
     return "yt-dlp downloaded (restart the app to use it)."
+
+
+def update_deno(progress: Progress = None) -> str:
+    """Download Deno (the JavaScript runtime yt-dlp needs for YouTube) into bin/."""
+    machine = platform.machine().lower()
+    arm = machine in ("aarch64", "arm64")
+    if sys.platform.startswith("win"):
+        target = "aarch64-pc-windows-msvc" if arm else "x86_64-pc-windows-msvc"
+    elif sys.platform == "darwin":
+        target = "aarch64-apple-darwin" if arm else "x86_64-apple-darwin"
+    elif sys.platform.startswith("linux"):
+        target = "aarch64-unknown-linux-gnu" if arm else "x86_64-unknown-linux-gnu"
+    else:
+        raise RuntimeError(f"Unsupported platform: {sys.platform}")
+
+    bin_dir().mkdir(parents=True, exist_ok=True)
+    name = _exe("deno")
+    with tempfile.TemporaryDirectory() as tmpd:
+        archive = Path(tmpd) / "deno.zip"
+        _download(f"https://github.com/denoland/deno/releases/latest/download/deno-{target}.zip",
+                  archive, progress, "Downloading Deno")
+        if progress:
+            progress(-1, "Installing Deno…")
+        with zipfile.ZipFile(archive) as z:
+            member = next((n for n in z.namelist() if Path(n).name == name), None)
+            if member is None:
+                raise RuntimeError("Couldn't find Deno inside the downloaded archive.")
+            with z.open(member) as src:
+                _install_binary(src, name)
+    return "Deno is up to date."
 
 
 def _install_binary(stream, name: str):

@@ -4,6 +4,7 @@ yt-dlp.pyz
 yt-dlp.pyz.new
 yt-dlp.pyz.dl
 libs/
+*.json
 
 # python / build output
 __pycache__/

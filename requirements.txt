@@ -1,2 +1,3 @@
 # Only needed to run from source or to build the app (the built app downloads newer versions itself).
-yt-dlp>=2024.8.6
+# The [default] extra also installs yt-dlp-ejs (YouTube's JavaScript solver) and mutagen (cover art for opus/flac).
+yt-dlp[default]>=2024.8.6
