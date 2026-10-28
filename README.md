@@ -1,8 +1,14 @@
-# MediaDownloader (yt-dlp + ffmpeg GUI)
+# MediaDownloader (yt-dlp + ffmpeg)
 
 A desktop app/script for downloading video or audio with **yt-dlp**, using **ffmpeg** for merging and
 converting. Supports MP4/MKV/WebM, MP3/M4A/Opus/FLAC/WAV, playlists, subtitles, embedded
 metadata and thumbnails, optional start/end clipping, live progress and cancel.
+
+## The window
+MediaDownloader opens a modern web-style window (light or dark, following your system). It is served by a tiny
+local server inside the app and shown in an app-style window using Edge or Chrome if one is installed
+(otherwise a tab in your default browser). The server only accepts requests from that window (localhost only,
+random per-run key). Closing the window quits the app. Prefer the old plain window? Run `python app.py --classic`.
 
 ## For end users (you already have the packaged app(.exe))
 Double-click `MediaDownloader` (`.exe` on Windows). That's it — no Python, yt-dlp, or ffmpeg to install.
@@ -34,7 +40,8 @@ reports it (YouTube and most big sites do) and tells you if a time is past the e
 
 - **Frame-accurate** (on by default, video only) re-encodes around the cut points so picture and sound start
   together and stay in sync. It is slower; turn it off for a fast clip, but the video may then start a little
-  before the audio. Audio-only clips are already precise and ignore this option.
+  before the audio. Audio-only clips ignore this option: the audio is downloaded in full and cut precisely
+  while converting, so the clip starts exactly where you asked.
 - Subtitles and chapters are trimmed to the clip and start at 0:00, so the clip's length and seeking are correct.
 - Clipping is turned off for playlists, and clips get a `[clip 1m30s-2m45s]` suffix in the filename.
 - Cover art ("Embed thumbnail") works for MP4, MKV, MP3 and M4A. For WebM, WAV, and FLAC/Opus it is skipped
@@ -55,7 +62,10 @@ That's all. On first run the app downloads yt-dlp and ffmpeg into this folder au
 the **Update yt-dlp & ffmpeg** button keeps them current. (`python update.py` does the same from a terminal.)
 
 ## Files
-- `app.py` – tkinter GUI
+- `app.py` – starts the app (web window by default, `--classic` for the tkinter window)
+- `webui.py` – local server that connects the web page to the Python code
+- `web/index.html` – the interface (one file: HTML, CSS and JavaScript)
+- `app_tk.py` – the older tkinter window
 - `downloader.py` – download engine (yt-dlp options, progress, cancel, ffmpeg lookup)
 - `updater.py` – downloads/updates yt-dlp, ffmpeg and Deno, no pip required
 - `build.py` – packages the app with PyInstaller

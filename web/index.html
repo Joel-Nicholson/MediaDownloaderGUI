@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MediaDownloader</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c6cff'/%3E%3Cpath d='M16 7v12m0 0-5-5m5 5 5-5M9 24h14' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0e1120; --bg2:#141934; --card:#181e3a; --card2:#1e2547; --line:#2c3562; --text:#eceeff; --muted:#a0a8cf;
+  --accent:#7c6cff; --accent2:#46c2ff; --good:#3ddc97; --bad:#ff6b81; --warn:#ffb454; --shadow:0 12px 34px rgba(0,0,0,.38);
+  --input:#10142b; color-scheme:dark;
+}
+@media (prefers-color-scheme: light){
+  :root{ --bg:#f2f4fb; --bg2:#e7ebf9; --card:#ffffff; --card2:#f5f6fd; --line:#dde1f2; --text:#1a1f3f; --muted:#5f6890;
+         --accent:#5a49ff; --accent2:#1696dc; --good:#12a56a; --bad:#d6334f; --warn:#b86b00; --shadow:0 10px 28px rgba(35,45,100,.12);
+         --input:#f7f8fe; color-scheme:light; }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; color:var(--text);
+  background:radial-gradient(1100px 600px at 12% -10%,color-mix(in srgb,var(--accent) 22%,transparent),transparent 60%),
+             radial-gradient(900px 500px at 105% 0%,color-mix(in srgb,var(--accent2) 18%,transparent),transparent 55%),var(--bg);
+  background-attachment:fixed; min-height:100vh;
+}
+.wrap{max-width:880px;margin:0 auto;padding:22px 20px 40px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+.logo{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex:none;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 45%,transparent)}
+.logo svg{width:24px;height:24px}
+h1{font-size:21px;margin:0;letter-spacing:.2px}
+.sub{color:var(--muted);font-size:13px}
+.spacer{flex:1}
+.pills{display:flex;gap:8px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font-size:12.5px;color:var(--muted);
+  background:var(--card);border:1px solid var(--line)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.dot.ok{background:var(--good);box-shadow:0 0 8px var(--good)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px;margin-bottom:14px;box-shadow:var(--shadow)}
+.card h2{margin:0 0 12px;font-size:12.5px;font-weight:650;text-transform:uppercase;letter-spacing:.9px;color:var(--muted)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:640px){.grid2{grid-template-columns:1fr}}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field>span{font-size:12.5px;color:var(--muted)}
+input[type=text],select{
+  width:100%;padding:11px 13px;border-radius:11px;border:1px solid var(--line);background:var(--input);color:var(--text);font:inherit;outline:none;
+  transition:border-color .15s, box-shadow .15s}
+input[type=text]::placeholder{color:color-mix(in srgb,var(--muted) 70%,transparent)}
+input[type=text]:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 28%,transparent)}
+select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:38px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238a93bd' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center;background-size:12px 8px}
+input:disabled,select:disabled{opacity:.5;cursor:not-allowed}
+.big{font-size:16px;padding:14px 15px}
+
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card2);color:var(--text);padding:10px 15px;border-radius:11px;
+  transition:transform .08s, background .15s, border-color .15s, opacity .15s}
+button:hover:not(:disabled){border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--card2))}
+button:active:not(:disabled){transform:translateY(1px)}
+button:disabled{opacity:.5;cursor:not-allowed}
+button:focus-visible,.switch input:focus-visible+.track,.seg button:focus-visible{outline:2px solid var(--accent2);outline-offset:2px}
+.primary{background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 55%,var(--accent2)));border:none;color:#fff;font-weight:650;
+  padding:13px 26px;font-size:16px;box-shadow:0 8px 22px color-mix(in srgb,var(--accent) 40%,transparent)}
+.primary:hover:not(:disabled){filter:brightness(1.08);background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 55%,var(--accent2)))}
+.danger:hover:not(:disabled){border-color:var(--bad);background:color-mix(in srgb,var(--bad) 16%,var(--card2))}
+.link{background:none;border:none;padding:4px 2px;color:var(--accent2);font-size:13px}
+.link:hover:not(:disabled){background:none;text-decoration:underline}
+
+.seg{display:inline-flex;background:var(--input);border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px}
+.seg button{border:none;background:transparent;padding:8px 20px;border-radius:9px;color:var(--muted);font-weight:600}
+.seg button.on{background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 60%,var(--accent2)));color:#fff}
+.seg button:hover:not(:disabled):not(.on){background:var(--card2);border:none}
+
+.switch{display:flex;align-items:center;gap:11px;cursor:pointer;user-select:none;position:relative;padding:6px 0}
+.switch input{position:absolute;opacity:0;width:0;height:0}
+.track{width:40px;height:23px;border-radius:99px;background:var(--line);position:relative;flex:none;transition:background .18s}
+.track::after{content:"";position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:#fff;transition:transform .18s;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.switch input:checked+.track{background:var(--accent)}
+.switch input:checked+.track::after{transform:translateX(17px)}
+.switch input:disabled~*{opacity:.45}
+.switch input:disabled~.lbl{cursor:not-allowed}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:2px 22px}
+@media (max-width:640px){.opts{grid-template-columns:1fr}}
+.hint{font-size:12.5px;color:var(--muted);margin-top:8px}
+.callout{margin-top:12px;padding:11px 14px;border-radius:12px;font-size:13px;border:1px solid}
+.callout.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent);background:color-mix(in srgb,var(--warn) 10%,transparent)}
+.hidden{display:none!important}
+
+.preview{display:flex;gap:14px;margin-top:14px;padding:12px;border-radius:13px;background:var(--card2);border:1px solid var(--line);align-items:center}
+.preview img{width:128px;height:72px;object-fit:cover;border-radius:9px;background:var(--input);flex:none}
+.preview .t{font-weight:650;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.preview .m{color:var(--muted);font-size:13px;margin-top:3px}
+.err{color:var(--bad);font-size:13.5px;margin-top:10px}
+
+details>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:650;text-transform:uppercase;
+  letter-spacing:.9px;color:var(--muted)}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"\25B8";transition:transform .15s;display:inline-block}
+details[open]>summary::before{transform:rotate(90deg)}
+details[open]>summary{margin-bottom:12px}
+
+.actions{position:sticky;bottom:0;margin:0 -20px;padding:14px 20px 16px;
+  background:linear-gradient(to top,var(--bg) 62%,transparent);backdrop-filter:blur(3px)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:var(--shadow)}
+.progress{height:10px;border-radius:99px;background:var(--input);overflow:hidden;border:1px solid var(--line);margin-top:12px;position:relative}
+.bar{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:99px;transition:width .25s ease}
+.progress.indet .bar{width:35%!important;position:absolute;animation:slide 1.2s ease-in-out infinite}
+@keyframes slide{0%{left:-35%}100%{left:100%}}
+.status{margin-top:9px;font-size:13.5px;color:var(--muted);min-height:20px;word-break:break-word}
+.status.good{color:var(--good)} .status.bad{color:var(--bad)}
+pre#log{margin:0;max-height:210px;overflow:auto;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,Menlo,monospace;color:var(--muted);
+  background:var(--input);border:1px solid var(--line);border-radius:11px;padding:11px 13px;white-space:pre-wrap;word-break:break-word}
+
+dialog{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:16px;padding:22px 24px;max-width:460px;box-shadow:var(--shadow)}
+dialog::backdrop{background:rgba(5,8,20,.6);backdrop-filter:blur(2px)}
+dialog h3{margin:0 0 8px;font-size:17px} dialog p{margin:0 0 16px;color:var(--muted);white-space:pre-wrap}
+#toasts{position:fixed;top:16px;right:16px;display:flex;flex-direction:column;gap:8px;z-index:50}
+.toast{padding:11px 16px;border-radius:12px;background:var(--card2);border:1px solid var(--line);box-shadow:var(--shadow);max-width:340px;font-size:14px;
+  animation:pop .2s ease}
+.toast.bad{border-color:var(--bad)} .toast.good{border-color:var(--good)}
+@keyframes pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg></div>
+    <div><h1>MediaDownloader</h1><div class="sub">Video &amp; audio, powered by yt-dlp and ffmpeg</div></div>
+    <div class="spacer"></div>
+    <div class="pills">
+      <span class="pill"><span class="dot" id="dotYt"></span><span id="txtYt">yt-dlp</span></span>
+      <span class="pill"><span class="dot" id="dotFf"></span><span id="txtFf">ffmpeg</span></span>
+      <span class="pill"><span class="dot" id="dotDn"></span><span id="txtDn">Deno</span></span>
+      <button id="btnUpdate" title="Download the newest yt-dlp, ffmpeg and Deno">Update</button>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>Link</h2>
+    <div class="row">
+      <input id="url" class="big" type="text" style="flex:1;min-width:220px" placeholder="Paste a video or playlist link" autocomplete="off" spellcheck="false">
+      <button id="btnPaste">Paste</button>
+      <button id="btnFetch">Fetch info</button>
+    </div>
+    <div id="preview" class="preview hidden">
+      <img id="thumb" alt="" referrerpolicy="no-referrer">
+      <div style="min-width:0"><div class="t" id="ptitle"></div><div class="m" id="pmeta"></div></div>
+    </div>
+    <div id="infoErr" class="err hidden"></div>
+  </section>
+
+  <section class="card">
+    <h2>Format</h2>
+    <div class="seg" role="tablist" aria-label="Media type">
+      <button id="modeVideo" class="on" data-mode="video" role="tab">Video</button>
+      <button id="modeAudio" data-mode="audio" role="tab">Audio only</button>
+    </div>
+    <div id="panelVideo" class="grid2" style="margin-top:14px">
+      <label class="field"><span>Quality</span>
+        <select id="quality"><option value="best">Best available</option><option value="2160">2160p (4K)</option><option value="1440">1440p</option>
+          <option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option><option value="360">360p</option></select></label>
+      <label class="field"><span>Container</span>
+        <select id="container"><option>mp4</option><option>mkv</option><option>webm</option></select></label>
+    </div>
+    <div id="panelAudio" class="grid2 hidden" style="margin-top:14px">
+      <label class="field"><span>Format</span>
+        <select id="acodec"><option>mp3</option><option>m4a</option><option>opus</option><option>flac</option><option>wav</option></select></label>
+      <label class="field"><span>Bitrate (kbps)</span>
+        <select id="abitrate"><option>128</option><option selected>192</option><option>256</option><option>320</option></select></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Save to</h2>
+    <div class="row">
+      <input id="outdir" type="text" style="flex:1;min-width:220px" spellcheck="false">
+      <button id="btnBrowse">Browse…</button>
+      <button id="btnOpen">Open folder</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Options</h2>
+    <div class="opts">
+      <label class="switch"><input type="checkbox" id="playlist"><span class="track"></span><span class="lbl">Download whole playlist</span></label>
+      <label class="switch"><input type="checkbox" id="metadata" checked><span class="track"></span><span class="lbl">Embed metadata</span></label>
+      <label class="switch"><input type="checkbox" id="thumbnail"><span class="track"></span><span class="lbl">Embed thumbnail</span></label>
+      <label class="switch"><input type="checkbox" id="subs"><span class="track"></span><span class="lbl">Subtitles</span></label>
+    </div>
+    <div id="subRow" class="row hidden" style="margin-top:8px">
+      <label class="field" style="flex:1"><span>Subtitle languages</span><input id="subLangs" type="text" value="en" placeholder="en, es"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Clip (optional)</h2>
+    <div class="grid2">
+      <label class="field"><span>Start</span><input id="clipStart" type="text" placeholder="0:00" autocomplete="off"></label>
+      <label class="field"><span>End</span><input id="clipEnd" type="text" placeholder="e.g. 1:30" autocomplete="off"></label>
+    </div>
+    <label class="switch" style="margin-top:8px"><input type="checkbox" id="accurate" checked><span class="track"></span>
+      <span class="lbl">Frame-accurate (slower, keeps audio in sync)</span></label>
+    <div class="hint" id="clipHint">Times like 90, 1:30 or 1:02:30. Leave both blank for the whole video.</div>
+  </section>
+
+  <section class="card">
+    <details id="cookieBox">
+      <summary>Sign-in &amp; cookies</summary>
+      <div class="row">
+        <select id="cookie" style="width:auto;min-width:150px"></select>
+        <button id="btnCookieFile">Use cookies.txt…</button>
+        <button id="btnCookieClear" class="hidden">Clear</button>
+        <span id="cookieFileLabel" class="sub"></span>
+      </div>
+      <div class="hint">Only needed if YouTube says &ldquo;Sign in to confirm you&rsquo;re not a bot&rdquo;. Pick the browser you&rsquo;re signed in to YouTube with
+        (Firefox is the most reliable); use cookies.txt only if that doesn&rsquo;t work.</div>
+      <div class="callout warn">&#9888; This uses your real YouTube login. Heavy or automated downloading can get that account flagged or restricted by YouTube, so a spare account is safer.</div>
+    </details>
+  </section>
+
+  <section class="card">
+    <details id="advBox">
+      <summary>Advanced</summary>
+      <div class="row">
+        <span id="ffLabel" class="sub" style="flex:1;min-width:200px;word-break:break-all"></span>
+        <button id="btnFfmpeg">Locate ffmpeg…</button>
+        <button id="btnFfmpegClear" class="hidden">Reset</button>
+      </div>
+    </details>
+  </section>
+
+  <section class="card">
+    <details id="logBox">
+      <summary>Details</summary>
+      <pre id="log"></pre>
+    </details>
+  </section>
+
+  <div class="actions">
+    <div class="panel">
+      <div class="row">
+        <button id="btnDownload" class="primary">Download</button>
+        <button id="btnCancel" class="danger" disabled>Cancel</button>
+        <span class="spacer"></span>
+        <span class="sub" id="pctText"></span>
+      </div>
+      <div class="progress" id="progress"><div class="bar" id="bar"></div></div>
+      <div class="status" id="status">Ready.</div>
+    </div>
+  </div>
+</div>
+
+<dialog id="dlg"><h3 id="dlgTitle"></h3><p id="dlgBody"></p><div class="row" style="justify-content:flex-end"><button id="dlgOk" class="primary" style="padding:9px 22px;font-size:15px">OK</button></div></dialog>
+<div id="toasts"></div>
+
+<script>
+"use strict";
+const TOKEN = "__TOKEN__";
+const $ = (id) => document.getElementById(id);
+const S = {mode: "video", running: false, updating: false, canPick: false, cookieFile: "", ffmpegPath: "", restartNote: false, version: "", ffmpeg: false, deno: false};
+
+/* ---------- helpers ---------- */
+async function api(path, body) {
+  const opt = {headers: {"X-Token": TOKEN}};
+  if (body !== undefined) { opt.method = "POST"; opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+  let r, j = {};
+  try { r = await fetch(path, opt); } catch (e) { throw new Error("Lost connection to the app. Is it still running?"); }
+  try { j = await r.json(); } catch (e) { /* not json */ }
+  if (!r.ok || j.ok === false) { const err = new Error(j.error || ("Request failed (" + r.status + ")")); err.kind = j.kind; throw err; }
+  return j;
+}
+function toast(msg, kind) {
+  const t = document.createElement("div"); t.className = "toast " + (kind || ""); t.textContent = msg;
+  $("toasts").appendChild(t); setTimeout(() => t.remove(), 4500);
+}
+function showDialog(title, body) { $("dlgTitle").textContent = title; $("dlgBody").textContent = body; $("dlg").showModal(); }
+$("dlgOk").onclick = () => $("dlg").close();
+function setStatus(text, kind) { const s = $("status"); s.textContent = text || ""; s.className = "status " + (kind || ""); }
+function setProgress(pct, indeterminate) {
+  $("bar").style.width = Math.max(0, Math.min(100, pct || 0)) + "%";
+  $("progress").classList.toggle("indet", !!indeterminate);
+  $("pctText").textContent = (!indeterminate && pct > 0 && pct < 100) ? Math.round(pct) + "%" : "";
+}
+function logLine(text) {
+  const el = $("log"); const near = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
+  el.textContent += text + "\n";
+  if (el.textContent.length > 60000) el.textContent = el.textContent.slice(-40000);
+  if (near) el.scrollTop = el.scrollHeight;
+}
+
+/* ---------- options ---------- */
+function collect() {
+  return {
+    url: $("url").value.trim(), out_dir: $("outdir").value.trim(), mode: S.mode,
+    max_height: $("quality").value === "best" ? null : parseInt($("quality").value, 10),
+    container: $("container").value, audio_codec: $("acodec").value, audio_quality: $("abitrate").value,
+    playlist: $("playlist").checked, embed_metadata: $("metadata").checked, embed_thumbnail: $("thumbnail").checked,
+    subtitles: $("subs").checked, sub_langs: $("subLangs").value.trim() || "en",
+    clip_start: $("clipStart").value.trim(), clip_end: $("clipEnd").value.trim(), accurate_cut: $("accurate").checked,
+    cookie_browser: $("cookie").value, cookie_file: S.cookieFile, ffmpeg_path: S.ffmpegPath,
+  };
+}
+const UI_KEYS = ["quality", "container", "acodec", "abitrate", "subLangs"];
+const UI_CHECKS = ["metadata", "thumbnail", "subs", "accurate"];
+let saveTimer = null;
+function savePrefs() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    const ui = {mode: S.mode};
+    UI_KEYS.forEach((k) => ui[k] = $(k).value);
+    UI_CHECKS.forEach((k) => ui[k] = $(k).checked);
+    api("/api/settings", {ui, out_dir: $("outdir").value.trim(), cookie_browser: $("cookie").value, cookie_file: S.cookieFile, ffmpeg_path: S.ffmpegPath}).catch(() => {});
+  }, 400);
+}
+
+/* ---------- rendering ---------- */
+function render() {
+  const busy = S.running || S.updating;
+  const audio = S.mode === "audio", playlist = $("playlist").checked;
+  $("modeVideo").classList.toggle("on", !audio); $("modeAudio").classList.toggle("on", audio);
+  $("panelVideo").classList.toggle("hidden", audio); $("panelAudio").classList.toggle("hidden", !audio);
+  $("abitrate").disabled = ["flac", "wav"].includes($("acodec").value);
+  $("subRow").classList.toggle("hidden", !$("subs").checked);
+  $("clipStart").disabled = $("clipEnd").disabled = playlist;
+  $("accurate").disabled = playlist || audio;
+  $("clipHint").textContent = playlist ? "Clipping is off while \u201cDownload whole playlist\u201d is on."
+    : audio ? "Audio clips are downloaded in full, then cut precisely, so frame-accurate isn\u2019t needed."
+    : "Times like 90, 1:30 or 1:02:30. Leave both blank for the whole video.";
+  $("btnDownload").disabled = busy; $("btnCancel").disabled = !S.running; $("btnUpdate").disabled = busy;
+  $("btnDownload").textContent = S.running ? "Downloading…" : "Download";
+  $("btnBrowse").classList.toggle("hidden", !S.canPick); $("btnFfmpeg").classList.toggle("hidden", !S.canPick);
+  $("btnCookieFile").classList.toggle("hidden", !S.canPick);
+  $("btnCookieClear").classList.toggle("hidden", !S.cookieFile);
+  $("cookieFileLabel").textContent = S.cookieFile ? "using " + S.cookieFile.split(/[\\/]/).pop() : "";
+  $("btnFfmpegClear").classList.toggle("hidden", !S.ffmpegPath);
+  $("ffLabel").textContent = S.ffmpegPath ? "Using ffmpeg at: " + S.ffmpegPath : (S.ffmpeg ? "ffmpeg: found automatically" : "ffmpeg: not found yet");
+  $("dotYt").className = "dot ok"; $("txtYt").textContent = "yt-dlp " + (S.version || "") + (S.restartNote ? " (restart for new)" : "");
+  $("dotFf").className = "dot " + (S.ffmpeg ? "ok" : (S.updating ? "warn" : "bad")); $("txtFf").textContent = S.ffmpeg ? "ffmpeg ready" : (S.updating ? "ffmpeg setting up\u2026" : "ffmpeg missing");
+  $("dotDn").className = "dot " + (S.deno ? "ok" : (S.updating ? "warn" : "warn")); $("txtDn").textContent = S.deno ? "Deno ready" : (S.updating ? "Deno setting up\u2026" : "Deno missing");
+  if (!S.running && !S.updating && $("progress").classList.contains("indet")) $("progress").classList.remove("indet");
+}
+function setMode(m) { S.mode = m; render(); savePrefs(); }
+document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode));
+["acodec", "quality", "container", "abitrate", "subLangs", "metadata", "thumbnail", "subs", "accurate", "playlist", "cookie"].forEach((id) =>
+  $(id).addEventListener("change", () => { render(); savePrefs(); }));
+$("outdir").addEventListener("change", savePrefs);
+
+function applyState(st) {
+  S.version = st.version; S.ffmpeg = st.ffmpeg; S.deno = st.deno; S.canPick = st.can_pick;
+  S.running = st.running; S.updating = st.updating;
+  const sel = $("cookie"); if (!sel.options.length) st.cookie_choices.forEach((c) => sel.add(new Option(c, c)));
+  const cfg = st.settings || {}, ui = cfg.ui || {};
+  if (!applyState.done) {
+    applyState.done = true;
+    $("outdir").value = cfg.out_dir || ""; sel.value = cfg.cookie_browser || "None"; S.cookieFile = cfg.cookie_file || ""; S.ffmpegPath = cfg.ffmpeg_path || "";
+    if (ui.mode === "audio" || ui.mode === "video") S.mode = ui.mode;
+    UI_KEYS.forEach((k) => { if (ui[k] !== undefined && ui[k] !== null) $(k).value = ui[k]; });
+    UI_CHECKS.forEach((k) => { if (typeof ui[k] === "boolean") $(k).checked = ui[k]; });
+    if (S.cookieFile || sel.value !== "None") $("cookieBox").open = true;
+    $("log").textContent = (st.log || []).join("\n") + (st.log && st.log.length ? "\n" : "");
+    setStatus(st.status || "Ready."); setProgress(st.progress || 0, (st.running || st.updating) && !(st.progress > 0));
+  }
+  render();
+}
+async function loadState() { try { applyState(await api("/api/state")); } catch (e) { setStatus(e.message, "bad"); } }
+
+/* ---------- actions ---------- */
+$("btnPaste").onclick = async () => {
+  try { const t = await navigator.clipboard.readText(); if (t) { $("url").value = t.trim(); $("url").focus(); } }
+  catch (e) { toast("Your browser blocked clipboard access. Press Ctrl+V in the box instead.", "bad"); }
+};
+$("btnFetch").onclick = async () => {
+  $("infoErr").classList.add("hidden"); $("preview").classList.add("hidden");
+  const b = $("btnFetch"); b.disabled = true; b.textContent = "Fetching\u2026";
+  try { await api("/api/fetch", collect()); } catch (e) { b.disabled = false; b.textContent = "Fetch info"; toast(e.message, "bad"); }
+};
+$("btnDownload").onclick = async () => {
+  try { setProgress(0, true); setStatus("Starting\u2026"); await api("/api/download", collect()); S.running = true; render(); }
+  catch (e) {
+    setProgress(0, false); setStatus("Ready.");
+    if (e.kind === "clip") showDialog("Clip times", e.message);
+    else if (e.kind === "cookies") showDialog("Cookies file", e.message);
+    else toast(e.message, "bad");
+  }
+};
+$("url").addEventListener("keydown", (e) => { if (e.key === "Enter" && !$("btnDownload").disabled) $("btnDownload").click(); });
+$("btnCancel").onclick = () => api("/api/cancel", {}).catch((e) => toast(e.message, "bad"));
+$("btnUpdate").onclick = async () => {
+  try { setProgress(0, true); await api("/api/update", {ytdlp: true, ffmpeg: true, deno: true}); S.updating = true; render(); }
+  catch (e) { setProgress(0, false); toast(e.message, "bad"); }
+};
+async function pick(kind, initial) { try { return (await api("/api/pick", {kind, initial})).path || ""; } catch (e) { toast(e.message, "bad"); return ""; } }
+$("btnBrowse").onclick = async () => { const p = await pick("folder", $("outdir").value); if (p) { $("outdir").value = p; savePrefs(); } };
+$("btnOpen").onclick = () => api("/api/open_folder", {path: $("outdir").value.trim()}).catch((e) => toast(e.message, "bad"));
+$("btnCookieFile").onclick = async () => { const p = await pick("cookies", ""); if (p) { S.cookieFile = p; render(); savePrefs(); } };
+$("btnCookieClear").onclick = () => { S.cookieFile = ""; render(); savePrefs(); };
+$("btnFfmpeg").onclick = async () => { const p = await pick("ffmpeg", ""); if (p) { S.ffmpegPath = p; render(); savePrefs(); loadState(); } };
+$("btnFfmpegClear").onclick = () => { S.ffmpegPath = ""; render(); savePrefs(); loadState(); };
+
+/* ---------- live events from the app ---------- */
+const es = new EventSource("/api/events?t=" + encodeURIComponent(TOKEN));
+es.onopen = loadState;
+const on = (name, fn) => es.addEventListener(name, (e) => fn(JSON.parse(e.data)));
+on("progress", (d) => { setProgress(d.pct, d.indeterminate || (d.pct <= 0 && (S.running || S.updating))); setStatus(d.text); });
+on("log", (d) => logLine(d.text));
+on("busy", (d) => { S.running = d.running; S.updating = d.updating; render(); });
+on("info", (d) => {
+  const b = $("btnFetch"); b.disabled = false; b.textContent = "Fetch info";
+  if (d.ok) {
+    $("ptitle").textContent = d.title; $("pmeta").textContent = d.meta || "";
+    const img = $("thumb"); img.classList.toggle("hidden", !d.thumb); img.onerror = () => img.classList.add("hidden"); img.src = d.thumb || "";
+    $("preview").classList.remove("hidden"); $("infoErr").classList.add("hidden");
+  } else { $("infoErr").textContent = d.message; $("infoErr").classList.remove("hidden"); }
+});
+on("done", (d) => {
+  S.running = false; setProgress(d.ok ? 100 : 0, false); setStatus(d.message, d.ok ? "good" : "bad"); render();
+  if (d.clip) showDialog("Clip times", d.message.replace(/^Clip times:\s*/, ""));
+  else if (d.tip) showDialog("Heads up", d.tip);
+  else if (d.ok) toast("Download finished", "good");
+});
+on("update_done", async (d) => {
+  S.updating = false; setProgress(d.ok ? 100 : 0, false); setStatus(d.message, d.ok ? "good" : "bad");
+  if (d.restart) S.restartNote = true;
+  await loadState(); if (d.ok) toast("Update finished" + (d.restart ? " \u2014 restart the app to use the new yt-dlp" : ""), "good");
+});
+
+$("url").focus();
+</script>
+</body>
+</html>

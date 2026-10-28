@@ -36,7 +36,8 @@ except ImportError:
 
 from yt_dlp import YoutubeDL  # noqa: E402
 from yt_dlp.postprocessor.common import PostProcessor  # noqa: E402
-from yt_dlp.utils import DownloadCancelled  # noqa: E402
+from yt_dlp.postprocessor.ffmpeg import FFmpegPostProcessor  # noqa: E402
+from yt_dlp.utils import DownloadCancelled, prepend_extension  # noqa: E402
 
 # Event callback signature: on_event(kind, payload)
 #   ("progress", (percent: float, text: str))
@@ -226,11 +227,22 @@ def trim_srt(text: str, start: float, end: float) -> Optional[str]:
 
 
 class ClipTrimPP(PostProcessor):
-    """Runs just before a clip is downloaded; trims subtitles and chapters to the clip."""
+    """Runs just before a clip is downloaded; trims subtitles and chapters to the clip.
+
+    Video clips: yt-dlp knows the section, so the times come from the download itself.
+    Audio clips: the whole audio is downloaded and cut afterwards, so the times are passed in.
+    """
+
+    def __init__(self, downloader=None, start=None, end=None, explicit=False):
+        super().__init__(downloader)
+        self._explicit = (float(start or 0), end) if explicit else None
 
     def run(self, info):
-        start = float(info.get("section_start") or 0)
-        end_raw = info.get("section_end")
+        if self._explicit is not None:
+            start, end_raw = self._explicit
+        else:
+            start = float(info.get("section_start") or 0)
+            end_raw = info.get("section_end")
         if not start and not end_raw:          # not a clip: nothing to do
             return [], info
         end = float(end_raw) if end_raw else float("inf")
@@ -285,6 +297,52 @@ class ClipTrimPP(PostProcessor):
                 out.append({**c, "start_time": s - start,
                             "end_time": None if e == float("inf") else e - start})
         info["chapters"] = out or None
+
+
+class AudioClipCutPP(FFmpegPostProcessor):
+    """Safety net for audio clips, run right after yt-dlp's audio conversion.
+
+    The cut normally happens during that conversion. But when the audio is already in the
+    target format (for example AAC audio saved as .m4a) yt-dlp skips the conversion, so
+    nothing would be cut. This checks the file's real length and, if it is still too long,
+    cuts it precisely (stream copy, reading from the start so the start point is exact).
+    """
+
+    def __init__(self, downloader=None, start=0.0, end=None):
+        super().__init__(downloader)
+        self._start = float(start or 0.0)
+        self._end = end
+
+    def run(self, info):
+        path = info.get("filepath")
+        if not path or not os.path.isfile(path):
+            return [], info
+        end = self._end if self._end is not None else info.get("duration")
+        if end is None:
+            return [], info
+        want = float(end) - self._start
+        if want <= 0:
+            return [], info
+        try:
+            have = self._get_real_video_duration(path, False)
+        except Exception:  # noqa: BLE001
+            have = None
+        if not have or float(have) <= want + 0.75:      # already cut: nothing to do
+            return [], info
+        out = prepend_extension(path, "cut")
+        self.to_screen(f"Cutting the audio to the clip ({fmt_time(self._start)}, {fmt_time(want)} long)")
+        self.run_ffmpeg(path, out, ["-vn", "-map", "0:a:0", "-c:a", "copy",
+                                    "-ss", f"{self._start:.3f}", "-t", f"{want:.3f}"])
+        os.replace(out, path)
+        return [], info
+
+
+try:   # make the step available to yt-dlp's post-processor lookup (its plugin registry)
+    from yt_dlp.globals import postprocessors as _pp_registry
+    _pp_registry.value["AudioClipCutPP"] = AudioClipCutPP
+except ImportError:   # older yt-dlp
+    import yt_dlp.postprocessor as _ytpp
+    _ytpp.AudioClipCutPP = AudioClipCutPP
 
 
 def ytdlp_version() -> str:
@@ -437,15 +495,22 @@ def build_ydl_opts(o: Options, hook, logger) -> dict:
     if ffmpeg:
         opts["ffmpeg_location"] = ffmpeg
 
-    if clipping:
+    if clipping and o.mode == "audio":
+        # Cutting audio during the download (stream copy) can only start at the container's
+        # nearest earlier seek point, so the clip came out seconds early. Audio is small, so
+        # download it all and make ONE precise cut while converting to the final format.
+        cut = ["-ss", f"{clip_start or 0.0:.3f}"]
+        if clip_end is not None:
+            cut += ["-t", f"{max(clip_end - (clip_start or 0.0), 0.001):.3f}"]
+        opts["postprocessor_args"] = {"extractaudio": cut}
+    elif clipping:
         from yt_dlp.utils import download_range_func
         opts["download_ranges"] = download_range_func(
             None,
             [(clip_start or 0.0, clip_end if clip_end is not None else float("inf"))],
         )
         # Frame-accurate cutting only matters for video (it is what keeps picture and sound
-        # starting together). Audio-only clips are already precise and must not be
-        # re-encoded twice, so they always use the fast stream-copy cut.
+        # starting together). Audio-only clips are handled above (cut while converting).
         accurate = bool(o.accurate_cut) and o.mode == "video"
         opts["force_keyframes_at_cuts"] = accurate
         if accurate and o.container in ("mp4", "mkv"):
@@ -461,6 +526,8 @@ def build_ydl_opts(o: Options, hook, logger) -> dict:
         if o.audio_codec in ("mp3", "m4a", "opus"):
             pp["preferredquality"] = o.audio_quality
         pps.append(pp)
+        if clipping:
+            pps.append({"key": "AudioClipCut", "start": clip_start or 0.0, "end": clip_end})
     else:
         h = o.max_height
         if h:
@@ -530,6 +597,9 @@ def create_ydl(o: Options, hook, logger) -> YoutubeDL:
     if opts.get("download_ranges"):
         # Subtitles/chapters are fetched for the whole video; trim them to the clip.
         ydl.add_post_processor(ClipTrimPP(), when="before_dl")
+    elif opts.get("postprocessor_args", {}).get("extractaudio"):
+        start, end = validate_clip(o.clip_start, o.clip_end)
+        ydl.add_post_processor(ClipTrimPP(start=start, end=end, explicit=True), when="before_dl")
     return ydl
 
 

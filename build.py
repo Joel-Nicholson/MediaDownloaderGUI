@@ -22,6 +22,7 @@ cmd = [
     "--name", "MediaDownloader",
     "--collect-submodules", "yt_dlp",      # baseline yt-dlp inside the app (updates override it)
 ]
+cmd += ["--add-data", f"{root / 'web'}{sep}web"]    # the web interface page
 try:
     import yt_dlp_ejs  # noqa: F401  (YouTube's JavaScript solver scripts)
     cmd += ["--collect-all", "yt_dlp_ejs"]
